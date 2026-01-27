@@ -43,19 +43,13 @@ enum Commands {
 
 fn main() {
     
-    let data = fs::read("data/data.json").expect("error");
+    let data = fs::read("data/data.bin").expect("error");
     let mut password = String::new();
-    let mut salt = [0u8; 16]; // array de 16 bytes
+    let mut salt = [0u8; 16];
 
     if data.is_empty() {
-        OsRng.fill_bytes(&mut salt); // on remplit salt
-    } else {
-        let file_data = fs::read("data/data.json").expect("error"); 
-        let (s, _) = file_data.split_at(16);
-        salt.copy_from_slice(s); // on copie les 16 bytes dans salt
-    }
-
-    if data.is_empty() {
+        OsRng.fill_bytes(&mut salt);
+        
         println!("Please, choose your password.");
         
         let mut confirmation = String::new();
@@ -69,6 +63,10 @@ fn main() {
             process::abort();
         }
     } else {
+        let file_data = fs::read("data/data.bin").expect("error"); 
+        let (s, _) = file_data.split_at(16);
+        salt.copy_from_slice(s);
+
         println!("Please, type your password.");
         io::stdin().read_line(&mut password).expect("Not a good pwd");
     }
@@ -80,6 +78,7 @@ fn main() {
         if data.is_empty() {
             Vec::new()
         } else {
+            let (_, data) = data.split_at(16);
             decrypt(&data.to_vec(), &cipher)
         };
 
@@ -94,7 +93,7 @@ fn main() {
             encrypted.extend_from_slice(&salt);
             encrypted.extend_from_slice(&encrypt(&entries, &cipher)); 
            
-            fs::write("data/data.json", encrypted).expect("6");
+            fs::write("data/data.bin", encrypted).expect("6");
         }
 
         Commands::Remove { service } => {
@@ -105,7 +104,7 @@ fn main() {
             encrypted.extend_from_slice(&salt);
             encrypted.extend_from_slice(&encrypt(&entries, &cipher)); 
 
-            fs::write("data/data.json", encrypted).expect("6");
+            fs::write("data/data.bin", encrypted).expect("6");
         }
 
         Commands::List => {
