@@ -1,6 +1,20 @@
 # Passmngr
 
-Passmngr is a CLI password manager in Rust, that use ChaCha20Poly1305 for encryption.
+Passmngr is a CLI password manager coded in Rust.
+
+## Security
+
+Passmngr encrypts all data using ChaCha20-Poly1305.
+The encryption key is derived from the master password using a key
+derivation function (Argon2).
+
+Each encryption operation uses a unique nonce.
+The master password is never stored.
+
+## Data storage
+
+All encrypted data is stored locally in a single file located at:
+~/.config/passmngr/data
 
 ## Installation
 
@@ -10,7 +24,7 @@ Then use cargo to install pssmngr.
 ```bash
 cargo install --git https://github.com/22deeme22/passmngr
 ```
-After this, go to your <ins>"/.bashrc"</ins> (or <ins>"/.zshrc"</ins> if you use zsh) file, and at the end of the file, paste
+If after this the command **passmngr** is not found, go to your <ins>"/.bashrc"</ins> (or <ins>"/.zshrc"</ins> if you use zsh) file, and at the end of the file, paste
 ```
 export PATH="$HOME/.cargo/bin:$PATH"
 ```
@@ -63,3 +77,7 @@ Notice that you can see every information by just write **passmngr** in your ter
 
 ## Contribution
 Pull requests are welcome. For major changes, please open an issue to discuss what you would like to change.
+
+## Disclaimer
+
+Passmngr is a personal project, do not use it to store highly sensitive data.
