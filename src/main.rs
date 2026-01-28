@@ -1,5 +1,6 @@
+use rpassword::{prompt_password};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fs, io::{self}, process, u8};
+use std::{error::Error, fs, process, u8};
 use serde_json::{from_str, to_string_pretty};
 use clap::Parser;
 use chacha20poly1305::{
@@ -40,6 +41,10 @@ enum Commands{
     Remove{
         service: String
     },
+    /// Show the login and the password of the service asked by the user.
+    Pwd {
+        service: String  
+    },
     /// List every entry.
     List,
 }
@@ -47,36 +52,33 @@ enum Commands{
 fn main() -> Result<(), Box<dyn Error>>{
     
     let data = fs::read("data/data.bin")?;
-    let mut password = String::new();
     let mut salt = [0u8; SALT_SIZE_BYTES];
 
+    let password =
     // If there is no data yet => 
     // 1. Init the salt
     // 2. Ask the user to create a password and to confirm
-    if data.is_empty() {
-        OsRng.fill_bytes(&mut salt);
-        
-        println!("Please, choose your password.");
-        let mut confirmation = String::new();
-        io::stdin().read_line(&mut password)?;
-        println!("Confirm your password.");
-        io::stdin().read_line(&mut confirmation).expect("Not the same password");
-        
-        if confirmation != password {
-            println!("Password aren't the same!");
-            process::abort();
-        }
-    // If there is some data already =>
-    // Extract the salt and the password from the data
-    } else {
-        let file_data = fs::read("data/data.bin")?; 
-        // Keep only the part of data that contains the salt
-        let (s, _) = file_data.split_at(SALT_SIZE_BYTES);
-        salt.copy_from_slice(s);
-
-        println!("Please, type your password.");
-        io::stdin().read_line(&mut password)?;
-    }
+        if data.is_empty() {
+            OsRng.fill_bytes(&mut salt);
+         
+            let pwd = prompt_password("Choose your password:")?;
+            let confirmation = prompt_password("Confirm your password:")?;
+    
+            if confirmation != pwd {
+                println!("Password aren't the same!");
+                process::abort();
+            }
+            pwd
+        // If there is some data already =>
+        // Extract the salt and the password from the data
+        } else {
+            let file_data = fs::read("data/data.bin")?; 
+            // Keep only the part of data that contains the salt
+            let (s, _) = file_data.split_at(SALT_SIZE_BYTES);
+            salt.copy_from_slice(s);
+    
+            prompt_password("Please, type your password:")?
+        };
 
     let key = derive_key(&password, &salt);
     let cipher = ChaChaPoly1305::new(&key);
@@ -96,6 +98,12 @@ fn main() -> Result<(), Box<dyn Error>>{
     let cli = Cli::parse();
     match cli.command {
         Commands::Add { service, login, password } => {
+
+            if entries.iter().any(|entry| entry.service == service) {
+                println!("The service already exist, please remove the old entry to add a new one.");
+                process::abort();
+            }
+            
             // Add the entry that the user wrote to the vector
             entries.push(Entry{ service, login, password});
 
@@ -121,9 +129,23 @@ fn main() -> Result<(), Box<dyn Error>>{
             Ok(())
         }
 
+        Commands::Pwd { service } => {
+            entries.retain(|entry| entry.service == service);
+            let entry = entries.first().expect("No service corresponding.");
+            println!("The login of '{}' is '{}', and the password is '{}'.", service, entry.login, entry.password);
+            Ok(())
+        }
+
         Commands::List => {
             // Print the vector
-            println!("{:#?}", entries);
+            let mut i = 0;
+            for entry in entries {
+                println!("{i}.");
+                println!("  -Service: {}", entry.service);
+                println!("  -Login: {}", entry.login);
+                println!("  -Password: {}", entry.password);
+                i += 1;
+            }
             Ok(())
         }
     }
