@@ -1,6 +1,7 @@
 use rpassword::{prompt_password};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fs, path::Path, process, u8};
+use std::{error::Error, fs, path::PathBuf, process, u8};
+use dirs;
 use serde_json::{from_str, to_string_pretty};
 use clap::Parser;
 use chacha20poly1305::{
@@ -53,14 +54,16 @@ enum Commands{
 
 fn main() -> Result<(), Box<dyn Error>>{
 
-    // Create the folder data if it doesn't exist
-    fs::create_dir_all("data")?; 
-    // Create the file data.bin if it doesn'exist
-    if !Path::new("data/data.bin").exists() {
-        fs::write("data/data.bin", b"")?; 
-    }
-    
-    let data = fs::read("data/data.bin")?;
+
+    let data_file = get_data_path();
+   
+    let data =
+        if !data_file.exists() {
+            Vec::new()
+        } else {
+            fs::read(&data_file)?
+        };
+
     let mut salt = [0u8; SALT_SIZE_BYTES];
 
     let password =
@@ -81,7 +84,7 @@ fn main() -> Result<(), Box<dyn Error>>{
         // If there is some data already =>
         // Extract the salt and the password from the data
         } else {
-            let file_data = fs::read("data/data.bin")?; 
+            let file_data = fs::read(&data_file)?; 
             // Keep only the part of data that contains the salt
             let (s, _) = file_data.split_at(SALT_SIZE_BYTES);
             salt.copy_from_slice(s);
@@ -121,7 +124,7 @@ fn main() -> Result<(), Box<dyn Error>>{
             encrypted.extend_from_slice(&salt);
             encrypted.extend_from_slice(&encrypt(&entries, &cipher)?); 
            
-            fs::write("data/data.bin", encrypted)?;
+            fs::write(&data_file, encrypted)?;
             Ok(())
         }
 
@@ -134,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>>{
             encrypted.extend_from_slice(&salt);
             encrypted.extend_from_slice(&encrypt(&entries, &cipher)?); 
 
-            fs::write("data/data.bin", encrypted)?;
+            fs::write(&data_file, encrypted)?;
             Ok(())
         }
 
@@ -189,7 +192,7 @@ fn main() -> Result<(), Box<dyn Error>>{
             encrypted.extend_from_slice(&salt);
             encrypted.extend_from_slice(&encrypt(&entries, &cipher)?); 
 
-            fs::write("data/data.bin", encrypted)?;
+            fs::write(data_file, encrypted)?;
 
             Ok(())
         }
@@ -232,4 +235,13 @@ fn derive_key(pwd: &str, salt: &[u8]) -> Key {
         &mut key_bytes).expect("Argon2 failed");
 
     Key::from_slice(&key_bytes).clone()
+}
+
+
+fn get_data_path() -> PathBuf {
+    let mut path = dirs::config_dir().expect("Impossible de trouver le dossier config");
+    path.push("passmngr"); // dossier spécifique à ton programme
+    std::fs::create_dir_all(&path).expect("Impossible de créer le dossier");
+    path.push("data.bin");
+    path
 }
