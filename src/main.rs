@@ -1,10 +1,10 @@
 use rpassword::{prompt_password};
 use serde::{Deserialize, Serialize};
-use std::{error::Error, fs, process, u8};
+use std::{error::Error, fs, path::Path, process, u8};
 use serde_json::{from_str, to_string_pretty};
 use clap::Parser;
 use chacha20poly1305::{
-    ChaCha20Poly1305, ChaChaPoly1305, Key, Nonce, aead::{Aead, AeadCore, KeyInit, OsRng}
+    ChaCha20Poly1305, Key, Nonce, aead::{Aead, AeadCore, KeyInit, OsRng}
 };
 use argon2::{self, Argon2, password_hash::rand_core::{RngCore}};
 
@@ -42,14 +42,23 @@ enum Commands{
         service: String
     },
     /// Show the login and the password of the service asked by the user.
-    Pwd {
+    Info {
         service: String  
     },
     /// List every entry.
     List,
+    /// Change your password.
+    Passwd,
 }
 
 fn main() -> Result<(), Box<dyn Error>>{
+
+    // Create the folder data if it doesn't exist
+    fs::create_dir_all("data")?; 
+    // Create the file data.bin if it doesn'exist
+    if !Path::new("data/data.bin").exists() {
+        fs::write("data/data.bin", b"")?; 
+    }
     
     let data = fs::read("data/data.bin")?;
     let mut salt = [0u8; SALT_SIZE_BYTES];
@@ -81,7 +90,7 @@ fn main() -> Result<(), Box<dyn Error>>{
         };
 
     let key = derive_key(&password, &salt);
-    let cipher = ChaChaPoly1305::new(&key);
+    let cipher = ChaCha20Poly1305::new(&key);
  
     // If there is no data yet, init entries as an empty vec,
     // otherwise init entries as the old entries decrypted
@@ -129,7 +138,7 @@ fn main() -> Result<(), Box<dyn Error>>{
             Ok(())
         }
 
-        Commands::Pwd { service } => {
+        Commands::Info { service } => {
             entries.retain(|entry| entry.service == service);
             let entry = entries.first().expect("No service corresponding.");
             println!("The login of '{}' is '{}', and the password is '{}'.", service, entry.login, entry.password);
@@ -137,6 +146,10 @@ fn main() -> Result<(), Box<dyn Error>>{
         }
 
         Commands::List => {
+            if data.is_empty() {
+                println!("You have no entry in your list yet!");
+                process::abort();
+            }
             // Print the vector
             let mut i = 0;
             for entry in entries {
@@ -146,6 +159,38 @@ fn main() -> Result<(), Box<dyn Error>>{
                 println!("  -Password: {}", entry.password);
                 i += 1;
             }
+            Ok(())
+        }
+
+        Commands::Passwd => {
+            
+            // If the data is empty, impossible to change the password
+            if data.is_empty() {
+                println!("You have nothing to protect yet!");
+                process::abort();
+            }
+            
+            let new_pwd = prompt_password("Please type your new password:")?;
+            let confirmation = prompt_password("Confirm your password:")?;
+ 
+            if confirmation != new_pwd {
+                println!("Password aren't the same!");
+                process::abort();
+            }
+
+            // Create a new salt, and then derive the key with the new pwd and the new salt
+            OsRng.fill_bytes(&mut salt);
+
+            let key = derive_key(&new_pwd, &salt);
+            let cipher = ChaCha20Poly1305::new(&key);
+
+            // Encrypt the data with our new salt
+            let mut encrypted = Vec::new();
+            encrypted.extend_from_slice(&salt);
+            encrypted.extend_from_slice(&encrypt(&entries, &cipher)?); 
+
+            fs::write("data/data.bin", encrypted)?;
+
             Ok(())
         }
     }
