@@ -118,14 +118,13 @@ fn main() -> Result<(), Box<dyn Error>>{
     let cli = Cli::parse();
     match cli.command {
         Commands::Add { service, login } => {
-
-            let pwd = prompt_password(&format!("Write the password of your {} account:", service))?;
             
             if entries.iter().any(|entry| entry.service == service) {
                 println!("{}",EXIST_ALREADY);
                 process::abort();
             }
 
+            let pwd = prompt_password(&format!("Write the password of your {} account:", service))?;
             // Add the entry that the user wrote to the vector
             entries.push(Entry{ service, login, password: pwd});
 
