@@ -12,7 +12,21 @@ use argon2::{self, Argon2, password_hash::rand_core::{RngCore}};
 const SALT_SIZE_BYTES: usize = 16;
 const NONCE_SIZE_BYTES: usize = 12;
 
-#[derive(Serialize, Deserialize, Debug)]
+const TYPE_PWD:&str = "Type your password:";
+const CHOOSE_PWD:&str = "Choose your password:";
+const WRONG_PWD:&str = "Wrong password!";
+const PWD_CONFIRMATION:&str = "Confirm your password:";
+const PWD_NOT_CORRESPOND:&str = "You wrote two different password.";
+const EMPTY_DATA:&str = "You have no entry in your list yet!"; 
+const NO_SERVICE:&str = "No service corresponding.";
+const EXIST_ALREADY:&str = "The service already exist, please remove the old entry to add a new one.";
+
+const PATH_1:&str = "passmngr";
+const PATH_2:&str = "data.bin";
+const CREATE_PATH_FAIL:&str = "Impossible to create the path.";
+const FAIL: &str = "Argon2 failed";
+
+#[derive(Serialize, Deserialize)]
 struct Entry {
     service: String,
     login: String,
@@ -25,7 +39,6 @@ struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
-
 
 #[derive(Parser)]
 enum Commands{
@@ -54,9 +67,7 @@ enum Commands{
 
 fn main() -> Result<(), Box<dyn Error>>{
 
-
     let data_file = get_data_path();
-   
     let data =
         if !data_file.exists() {
             Vec::new()
@@ -73,11 +84,11 @@ fn main() -> Result<(), Box<dyn Error>>{
         if data.is_empty() {
             OsRng.fill_bytes(&mut salt);
          
-            let pwd = prompt_password("Choose your password:")?;
-            let confirmation = prompt_password("Confirm your password:")?;
+            let pwd = prompt_password(CHOOSE_PWD)?;
+            let confirmation = prompt_password(PWD_CONFIRMATION)?;
     
             if confirmation != pwd {
-                println!("Password aren't the same!");
+                println!("{}", PWD_NOT_CORRESPOND);
                 process::abort();
             }
             pwd
@@ -89,7 +100,7 @@ fn main() -> Result<(), Box<dyn Error>>{
             let (s, _) = file_data.split_at(SALT_SIZE_BYTES);
             salt.copy_from_slice(s);
     
-            prompt_password("Please, type your password:")?
+            prompt_password(TYPE_PWD)?
         };
 
     let key = derive_key(&password, &salt);
@@ -106,13 +117,12 @@ fn main() -> Result<(), Box<dyn Error>>{
             decrypt(&data.to_vec(), &cipher)?
         };
 
-       
     let cli = Cli::parse();
     match cli.command {
         Commands::Add { service, login, password } => {
 
             if entries.iter().any(|entry| entry.service == service) {
-                println!("The service already exist, please remove the old entry to add a new one.");
+                println!("{}",EXIST_ALREADY);
                 process::abort();
             }
             
@@ -129,6 +139,12 @@ fn main() -> Result<(), Box<dyn Error>>{
         }
 
         Commands::Remove { service } => {
+
+            if !entries.iter().any(|entry| entry.service == service) {
+                println!("{}", NO_SERVICE);
+                process::abort();
+            }
+            
             // Keep every entry where the service doesn't correspond to the one that the user want to remove
             entries.retain(|entry| entry.service != service);
 
@@ -143,14 +159,14 @@ fn main() -> Result<(), Box<dyn Error>>{
 
         Commands::Info { service } => {
             entries.retain(|entry| entry.service == service);
-            let entry = entries.first().expect("No service corresponding.");
+            let entry = entries.first().expect(NO_SERVICE);
             println!("The login of '{}' is '{}', and the password is '{}'.", service, entry.login, entry.password);
             Ok(())
         }
 
         Commands::List => {
             if data.is_empty() {
-                println!("You have no entry in your list yet!");
+                println!("{}", EMPTY_DATA);
                 process::abort();
             }
             // Print the vector
@@ -169,15 +185,15 @@ fn main() -> Result<(), Box<dyn Error>>{
             
             // If the data is empty, impossible to change the password
             if data.is_empty() {
-                println!("You have nothing to protect yet!");
+                println!( "{}", EMPTY_DATA);
                 process::abort();
             }
             
-            let new_pwd = prompt_password("Please type your new password:")?;
-            let confirmation = prompt_password("Confirm your password:")?;
+            let new_pwd = prompt_password(CHOOSE_PWD)?;
+            let confirmation = prompt_password(PWD_CONFIRMATION)?;
  
             if confirmation != new_pwd {
-                println!("Password aren't the same!");
+                println!("{}", PWD_NOT_CORRESPOND);
                 process::abort();
             }
 
@@ -204,7 +220,7 @@ fn encrypt(entries: &Vec<Entry>, cipher: &ChaCha20Poly1305) -> Result<Vec<u8>, B
     let e_nonce = ChaCha20Poly1305::generate_nonce(&mut OsRng); 
 
     let json = to_string_pretty(&entries)?;
-    let encrypted = cipher.encrypt(&e_nonce, json.as_bytes()).expect("Wrong password!");
+    let encrypted = cipher.encrypt(&e_nonce, json.as_bytes()).expect(WRONG_PWD);
 
     // Return a byte vector that contains the nonce and then the entries encrypted
     let mut out = Vec::new();
@@ -213,13 +229,12 @@ fn encrypt(entries: &Vec<Entry>, cipher: &ChaCha20Poly1305) -> Result<Vec<u8>, B
     Ok(out)
 }
 
-
 fn decrypt(data: &Vec<u8>, cipher: &ChaCha20Poly1305) -> Result<Vec<Entry>, Box<dyn Error>> {
     // Extract the nonce (type byte for the moment) and the crypted entries from the data
     let (d_nonce_bytes, ciphertext) = data.split_at(NONCE_SIZE_BYTES);
     let d_nonce = Nonce::from_slice(d_nonce_bytes);
                 
-    let decrypted = cipher.decrypt(&d_nonce, ciphertext).expect("Wrong password!"); 
+    let decrypted = cipher.decrypt(&d_nonce, ciphertext).expect(WRONG_PWD); 
     let json = String::from_utf8(decrypted)?; 
     Ok(from_str::<Vec<Entry>>(&json)?)
 }
@@ -232,16 +247,17 @@ fn derive_key(pwd: &str, salt: &[u8]) -> Key {
     Argon2::default().hash_password_into(
         pwd.as_bytes(),
         salt,
-        &mut key_bytes).expect("Argon2 failed");
+        &mut key_bytes).expect(FAIL);
 
     Key::from_slice(&key_bytes).clone()
 }
 
-
+// Function that create the path to a passmngr folder in the .config folder of the user,
+// and then create the path to a data.bin file inside. 
 fn get_data_path() -> PathBuf {
-    let mut path = dirs::config_dir().expect("Impossible de trouver le dossier config");
-    path.push("passmngr"); // dossier spécifique à ton programme
-    std::fs::create_dir_all(&path).expect("Impossible de créer le dossier");
-    path.push("data.bin");
+    let mut path = dirs::config_dir().expect(CREATE_PATH_FAIL);
+    path.push(PATH_1); 
+    std::fs::create_dir_all(&path).expect(CREATE_PATH_FAIL);
+    path.push(PATH_2);
     path
 }
